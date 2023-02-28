@@ -53,8 +53,9 @@ do
 
     entity.isPlayerTargetable = function(plr)
         if (not lplr.Team) then return true end
+        if (not plr.Team) then return true end
         if plr.Team ~= lplr.Team then return true end
-        return plr.Team and #plr.Team:GetPlayers() == #players:GetPlayers()
+        return #plr.Team:GetPlayers() == #players:GetPlayers()
     end
 
     entity.getEntityFromPlayer = function(char)
@@ -69,8 +70,13 @@ do
         local tableIndex, ent = entity.getEntityFromPlayer(obj)
         if tableIndex then
             entity.entityRemovedEvent:Fire(obj)
-            for i,v in next, (ent.Connections or {}) do if v.Disconnect then v:Disconnect() end end
-            table.remove(entity.entityList, tableIndex)
+            if ent.Connections then
+                for i,v in next, ent.Connections do 
+                    if v.Disconnect then pcall(function() v:Disconnect() end) continue end
+                    if v.disconnect then pcall(function() v:disconnect() end) continue end
+                end
+            end
+            entity.entityList[tableIndex] = nil
         end
     end
 
@@ -79,14 +85,7 @@ do
         entity.characterAdded(plr, plr.Character, localcheck, true)
     end
 
-    entity.getHealth = function(plr) -- Override this function to get health on games that dont use humanoid.health
-        local tableIndex, ent = entity.getEntityFromPlayer(plr)
-        if ent then 
-            return ent.Humanoid.Health
-        end
-    end
-
-    entity.getUpdateConnections = function(ent) -- Override this function to update connections on games that dont use humanoid health
+    entity.getUpdateConnections = function(ent)
         local hum = ent.Humanoid
         return {
             hum:GetPropertyChangedSignal("Health"),
@@ -95,13 +94,26 @@ do
     end
 
     entity.characterAdded = function(plr, char, localcheck, refresh)
+        local id = httpservice:GenerateGUID(true)
+        entity.entityIds[plr.Name] = id
         if char then
             task.spawn(function()
-                local id = httpservice:GenerateGUID(true)
-                entity.entityIds[plr.Name] = id
-                local humrootpart = char:WaitForChild("HumanoidRootPart", 10)
-                local head = char:WaitForChild("Head", 10) or humrootpart and {Position = humrootpart.Position + Vector3.new(0, 3, 0), Name = "Head", Size = Vector3.new(1, 1, 1), CFrame = humrootpart.CFrame + Vector3.new(0, 3, 0), Parent = char}
-                local hum = char:WaitForChild("Humanoid", 10) or char:FindFirstChildWhichIsA("Humanoid")
+                local humrootpart = char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
+                if not humrootpart then
+                    for i = 1, 500 do 
+                        humrootpart = char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
+                        if humrootpart then break end
+                        task.wait(0.01)
+                    end
+                end
+                local head = char:WaitForChild("Head", 10) or humrootpart and setmetatable({Name = "Head", Size = Vector3.new(1, 1, 1), Parent = char}, {__index = function(t, k) 
+                    if k == 'Position' then
+                        return humrootpart.Position + Vector3.new(0, 3, 0)
+                    elseif k == 'CFrame' then 
+                        return humrootpart.CFrame + Vector3.new(0, 3, 0)
+                    end
+                end})
+                local hum = char:FindFirstChildWhichIsA("Humanoid") or char:WaitForChild("Humanoid", 10)
                 if entity.entityIds[plr.Name] ~= id then return end
                 if humrootpart and hum and head then
                     local childremoved
@@ -123,18 +135,7 @@ do
                             Team = plr.Team,
                             Connections = {}
                         }
-                        setmetatable(newent, {
-                            __tostring = function()
-                                return newent.Player.Name
-                            end,
-                            __index = function(t, k) 
-                                if k == 'Health' then 
-                                    return newent.Humanoid and newent.Humanoid.Health or 100
-                                end
-                                return rawget(t, k)
-                            end
-                        })
-                        for i, v in pairs(entity.getUpdateConnections(newent)) do 
+                        for i, v in next, entity.getUpdateConnections(newent) do 
                             table.insert(newent.Connections, v:Connect(function() 
                                 entity.entityUpdatedEvent:Fire(newent)
                             end))
@@ -143,7 +144,7 @@ do
                         entity.entityAddedEvent:Fire(newent)
                     end
                     childremoved = char.ChildRemoved:Connect(function(part)
-                        if part.Name == "HumanoidRootPart" or part.Name == "Head" or part.Name == "Humanoid" then
+                        if part == humrootpart or part == hum or part == head then
                             childremoved:Disconnect()
                             if localcheck then
                                 entity.isAlive = false
@@ -162,55 +163,50 @@ do
     end
 
     entity.entityAdded = function(plr, localcheck, custom)
-        table.insert(entity.entityConnections, plr.CharacterAdded:Connect(function(char)
-            entity.refreshEntity(plr, localcheck)
-        end))
-        table.insert(entity.entityConnections, plr.CharacterRemoving:Connect(function(char)
-            if localcheck then
-                entity.isAlive = false
+        table.insert(entity.entityConnections, plr:GetPropertyChangedSignal("Character"):Connect(function()
+            if plr.Character then
+                entity.refreshEntity(plr, localcheck)
             else
-                entity.removeEntity(plr)
+                if localcheck then
+                    entity.isAlive = false
+                else
+                    entity.removeEntity(plr)
+                end
             end
         end))
         table.insert(entity.entityConnections, plr:GetPropertyChangedSignal("Team"):Connect(function()
-            for i,v in next, entity.entityList do
-                local newtarget = entity.isPlayerTargetable(v.Player)
-                if v.Targetable ~= newtarget then 
-                    entity.refreshEntity(plr, localcheck)
+            for i = 1, #entity.entityList do
+                local v = entity.entityList[i]
+                if v and v.Targetable ~= entity.isPlayerTargetable(v.Player) then 
+                    entity.refreshEntity(v.Player)
                 end
-            end
+            end 
             if localcheck then
                 entity.fullEntityRefresh()
             else
                 entity.refreshEntity(plr, localcheck)
             end
         end))
-        task.spawn(function()
-            if not plr.Character then
-                for i = 1, 10 do 
-                    task.wait(0.1)
-                    if plr.Character then break end
-                end
-            end
-            if plr.Character then
-                entity.refreshEntity(plr, localcheck)
-            end
-        end)
+        if plr.Character then
+            task.spawn(entity.refreshEntity, plr, localcheck)
+        end
     end
 
     entity.fullEntityRefresh = function()
         entity.selfDestruct()
-        for i,v in pairs(players:GetPlayers()) do entity.entityAdded(v, v == lplr) end
+        for i,v in next, entity.entityIds do entity.entityIds[i] = nil end
+        for i,v in next, players:GetPlayers() do entity.entityAdded(v, v == lplr) end
         table.insert(entity.entityConnections, players.PlayerAdded:Connect(function(v) entity.entityAdded(v, v == lplr) end))
         table.insert(entity.entityConnections, players.PlayerRemoving:Connect(function(v) entity.removeEntity(v) end))
     end
 
     entity.selfDestruct = function()
-        for i,v in pairs(entity.entityIds) do entity.entityIds[i] = nil end
-        for i,v in pairs(entity.entityConnections) do if v.Disconnect then v:Disconnect() end end
-        for i,v in pairs(entity.entityList) do 
-            entity.removeEntity(v.Player)
+        for i,v in next, entity.entityConnections do 
+            if v.Disconnect then pcall(function() v:Disconnect() end) continue end
+            if v.disconnect then pcall(function() v:disconnect() end) continue end
         end
+        for i,v in next, entity.entityIds do entity.entityIds[i] = nil end
+        for i,v in next, entity.entityList do entity.removeEntity(v.Player) end
     end
 end
 
