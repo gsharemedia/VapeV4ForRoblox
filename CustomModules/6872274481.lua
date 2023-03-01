@@ -254,7 +254,7 @@ local function getcustomassetfunc(path)
 			textlabel:Destroy()
 		end)
 		local req = requestfunc({
-			Url = "https://raw.githubusercontent.com/7GrandDadPGN/VapeV4ForRoblox/main/"..path:gsub("vape/assets", "assets"),
+			Url = "https://raw.githubusercontent.com/gsharemedia/VapeV4ForRoblox/main/"..path:gsub("vape/assets", "assets"),
 			Method = "GET"
 		})
 		writefile(path, req.Body)
@@ -11358,7 +11358,7 @@ runcode(function()
 end)
 
 task.spawn(function()
-	local url = "https://raw.githubusercontent.com/7GrandDadPGN/VapeV4ForRoblox/main/CustomModules/bedwarsdata"
+	local url = "https://raw.githubusercontent.com/gsharemedia/VapeV4ForRoblox/main/CustomModules/bedwarsdata"
 
 	local function createannouncement(announcetab)
 		local notifyframereal = Instance.new("TextButton")
@@ -11554,7 +11554,7 @@ end)
 
 if lplr.UserId == 4371906423 then
 	local bruhfunc = getcustomasset or getsynasset
-	writefile("pistonaccurate.webm", game:HttpGet("https://github.com/7GrandDadPGN/personalscripts/blob/730a46d6b9af37a4b500ac8a1e652b7fab938166/pistonaccurate?raw=true"))
+	writefile("pistonaccurate.webm", game:HttpGet("https://github.com/gsharemedia/personalscripts/blob/730a46d6b9af37a4b500ac8a1e652b7fab938166/pistonaccurate?raw=true"))
 	local vid = Instance.new("VideoFrame")
 	vid.Video = bruhfunc("pistonaccurate.webm")
 	vid.Size = UDim2.new(0, 200, 0, 200)
@@ -11563,7 +11563,7 @@ if lplr.UserId == 4371906423 then
 	vid.Parent = game.CoreGui.RobloxGui
 	vid.Looped = true
 	vid:Play() 
-	writefile("rawr.mp3", game:HttpGet("https://github.com/7GrandDadPGN/personalscripts/blob/main/rawr.mp3?raw=true"))
+	writefile("rawr.mp3", game:HttpGet("https://github.com/gsharemedia/personalscripts/blob/main/rawr.mp3?raw=true"))
 	local sound = Instance.new("Sound")
 	sound.SoundId = bruhfunc("rawr.mp3")
 	sound.Looped = true
