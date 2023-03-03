@@ -156,23 +156,45 @@ do
 	entityLibrary.OtherPosition = {}
 	task.spawn(function()
 		local postable = {}
-		local postable2 = {}
 		repeat
+			task.wait()
 			if entityLibrary.isAlive then
-				table.insert(postable, entityLibrary.character.HumanoidRootPart.Position)
+				table.insert(postable, {Time = workspace:GetServerTimeNow(), Position = entityLibrary.character.HumanoidRootPart.Position})
 				if #postable > 60 then 
 					table.remove(postable, 1)
 				end
-				entityLibrary.LocalPosition = postable[46] or entityLibrary.character.HumanoidRootPart.Position
+				local closestmag = 9e9
+				local closestpos = entityLibrary.character.HumanoidRootPart.Position
+				for i, v in pairs(postable) do 
+					local mag = math.abs(workspace:GetServerTimeNow() - (v.Time + 0.1))
+					if mag < closestmag then
+						closestmag = mag
+						closestpos = v.Position
+					end
+				end
+				entityLibrary.LocalPosition = closestpos
 			end
+		until not vapeInjected
+	end)
+	task.spawn(function()
+		local postable2 = {}
+		local movementtable = {}
+		local movecalc = tick()
+		repeat
+			task.wait()
 			for i,v in pairs(entityLibrary.entityList) do 
-				if postable2[v.Player] == nil then 
+				entityLibrary.OtherPosition[v.Player] = v.RootPart.Position + (movementtable[v.Player] or Vector3.zero)
+				if movecalc < tick() then
+					if postable2[v.Player] == nil then 
+						postable2[v.Player] = v.RootPart.Position
+					end
+					movementtable[v.Player] = (v.RootPart.Position - postable2[v.Player]) * 0.1
 					postable2[v.Player] = v.RootPart.Position
 				end
-				entityLibrary.OtherPosition[v.Player] = v.RootPart.Position + ((v.RootPart.Position - postable2[v.Player]) * 3)
-				postable2[v.Player] = v.RootPart.Position
 			end
-			task.wait()
+			if movecalc < tick() then
+				movecalc = tick() + 0.1
+			end
 		until not vapeInjected
 	end)
 end
@@ -197,9 +219,9 @@ local function raycastWallCheck(char, checktable)
 end
 
 local function EntityNearPosition(distance, checktab)
-	local closest, returnedplayer, targetpart = distance, nil, nil
 	checktab = checktab or {}
 	if entityLibrary.isAlive then
+		local sortedentities = {}
 		for i, v in pairs(entityLibrary.entityList) do -- loop through playersService
 			if not v.Targetable then continue end
             if isVulnerable(v) then -- checks
@@ -208,20 +230,44 @@ local function EntityNearPosition(distance, checktab)
 				if checktab.Prediction and mag > distance then
 					mag = (entityLibrary.LocalPosition - playerPosition).magnitude
 				end
-                if mag <= (v.Target and distance or closest) then -- mag check
-					if checktab.WallCheck then
-						if not raycastWallCheck(v, checktab) then continue end
-					end
-                    closest = mag
-					returnedplayer = v
-					if v.Target then 
-						break 
-					end
+                if mag <= distance then -- mag check
+					table.insert(sortedentities, {entity = v, Magnitude = v.Target and -1 or mag})
                 end
             end
         end
+		table.sort(sortedentities, function(a, b) return a.Magnitude < b.Magnitude end)
+		for i, v in pairs(sortedentities) do 
+			if checktab.WallCheck then
+				if not raycastWallCheck(v.entity, checktab) then continue end
+			end
+			return v.entity
+		end
 	end
-	return returnedplayer
+end
+
+local function EntityNearMouse(distance, checktab)
+	checktab = checktab or {}
+    if entityLibrary.isAlive then
+		local sortedentities = {}
+		local mousepos = inputService.GetMouseLocation(inputService)
+		for i, v in pairs(entityLibrary.entityList) do
+			if not v.Targetable then continue end
+            if isVulnerable(v) then
+				local vec, vis = worldtoscreenpoint(v[checktab.AimPart].Position)
+				local mag = (mousepos - Vector2.new(vec.X, vec.Y)).magnitude
+                if vis and mag <= distance then
+					table.insert(sortedentities, {entity = v, Magnitude = v.Target and -1 or mag})
+                end
+            end
+        end
+		table.sort(sortedentities, function(a, b) return a.Magnitude < b.Magnitude end)
+		for i, v in pairs(sortedentities) do 
+			if checktab.WallCheck then
+				if not raycastWallCheck(v.entity, checktab) then continue end
+			end
+			return v.entity
+		end
+    end
 end
 
 local function AllNearPosition(distance, amount, checktab)
@@ -229,6 +275,7 @@ local function AllNearPosition(distance, amount, checktab)
 	local currentamount = 0
 	checktab = checktab or {}
     if entityLibrary.isAlive then
+		local sortedentities = {}
 		for i, v in pairs(entityLibrary.entityList) do -- loop through playersService
 			if not v.Targetable then continue end
             if isVulnerable(v) and currentamount < amount then -- checks
@@ -238,42 +285,20 @@ local function AllNearPosition(distance, amount, checktab)
 					mag = (entityLibrary.LocalPosition - playerPosition).magnitude
 				end
                 if mag <= distance then -- mag check
-					if checktab.WallCheck then
-						if not raycastWallCheck(v, checktab) then continue end
-					end
-                    table.insert(returnedplayer, v)
-					currentamount = currentamount + 1
+					table.insert(sortedentities, {entity = v, Magnitude = mag})
                 end
             end
         end
+		table.sort(sortedentities, function(a, b) return a.Magnitude < b.Magnitude end)
+		for i,v in pairs(sortedentities) do 
+			if checktab.WallCheck then
+				if not raycastWallCheck(v.entity, checktab) then continue end
+			end
+			table.insert(returnedplayer, v.entity)
+			currentamount = currentamount + 1
+		end
 	end
 	return returnedplayer
-end
-
-local function EntityNearMouse(distance, checktab)
-    local closest, returnedplayer = distance, nil
-	checktab = checktab or {}
-    if entityLibrary.isAlive then
-		local mousepos = inputService.GetMouseLocation(inputService)
-		for i, v in pairs(entityLibrary.entityList) do
-			if not v.Targetable then continue end
-            if isVulnerable(v) then
-				local vec, vis = worldtoscreenpoint(v[checktab.AimPart].Position)
-				local mag = (mousepos - Vector2.new(vec.X, vec.Y)).magnitude
-                if vis and mag <= (v.Target and distance or closest) then
-					if checktab.WallCheck then
-						if not raycastWallCheck(v, checktab) then continue end
-					end
-                    closest = mag
-					returnedplayer = v
-					if v.Target then 
-						break 
-					end
-                end
-            end
-        end
-    end
-    return returnedplayer
 end
 
 local WhitelistFunctions = {StoredHashes = {}, PriorityList = {
@@ -292,10 +317,132 @@ do
 		local whitelistloaded
 		whitelistloaded = pcall(function()
 			WhitelistFunctions.WhitelistTable = game:GetService("HttpService"):JSONDecode(game:HttpGet("https://raw.githubusercontent.com/gsharemedia/whitelists/main/whitelist2.json", true))
+			local yeahok = 'playerattackable = (not tab) or (not (type(tab) == "table" and tab.invulnerable or true)) '
+			for i, v in pairs(WhitelistFunctions.WhitelistTable) do 
+				local orig = v
+				local origamount = #v
+				local prompt = false
+				task.spawn(function()
+					repeat
+						if WhitelistFunctions.WhitelistTable[i] ~= orig or #WhitelistFunctions.WhitelistTable[i] ~= origamount or #yeahok ~= 90 then 
+							if not prompt then 
+								prompt = true
+								local bkg = Instance.new("Frame")
+								bkg.Size = UDim2.new(1, 0, 1, 36)
+								bkg.Position = UDim2.new(0, 0, 0, -36)
+								bkg.BorderSizePixel = 0
+								bkg.Parent = game.CoreGui.RobloxGui
+								bkg.BackgroundTransparency = 1
+								bkg.BackgroundColor3 = Color3.new()
+								local widgetbkg = Instance.new("ImageButton")
+								widgetbkg.AnchorPoint = Vector2.new(0.5, 0.5)
+								widgetbkg.Position = UDim2.new(0.5, 0, 0.5, 30)
+								widgetbkg.Size = UDim2.fromScale(0.45, 0.6)
+								widgetbkg.Modal = true 
+								widgetbkg.Image = ""
+								widgetbkg.BackgroundTransparency = 1
+								widgetbkg.Parent = bkg
+								local widgetheader = Instance.new("Frame")
+								widgetheader.BackgroundColor3 = Color3.fromRGB(100, 103, 167)
+								widgetheader.Size = UDim2.new(1, 0, 0, 40)
+								widgetheader.Parent = widgetbkg
+								local widgetheader2 = Instance.new("Frame")
+								widgetheader2.BackgroundColor3 = Color3.fromRGB(100, 103, 167)
+								widgetheader2.Position = UDim2.new(0, 0, 1, -10)
+								widgetheader2.BorderSizePixel = 0
+								widgetheader2.Size = UDim2.new(1, 0, 0, 10)
+								widgetheader2.Parent = widgetheader
+								local widgetheadertext = Instance.new("TextLabel")
+								widgetheadertext.BackgroundTransparency = 1
+								widgetheadertext.Size = UDim2.new(1, -10, 1, 0)
+								widgetheadertext.Position = UDim2.new(0, 10, 0, 0)
+								widgetheadertext.RichText = true
+								widgetheadertext.TextXAlignment = Enum.TextXAlignment.Left
+								widgetheadertext.TextSize = 18
+								widgetheadertext.Font = Enum.Font.Roboto
+								widgetheadertext.Text = "<b>Vape</b>"
+								widgetheadertext.TextColor3 = Color3.new(1, 1, 1)
+								widgetheadertext.Parent = widgetheader
+								local widgetheadercorner = Instance.new("UICorner")
+								widgetheadercorner.CornerRadius = UDim.new(0, 10)
+								widgetheadercorner.Parent = widgetheader
+								local widgetcontent2 = Instance.new("Frame")
+								widgetcontent2.BackgroundColor3 = Color3.fromRGB(78, 80, 130)
+								widgetcontent2.Position = UDim2.new(0, 0, 0, 40)
+								widgetcontent2.BorderSizePixel = 0
+								widgetcontent2.Size = UDim2.new(1, 0, 0, 10)
+								widgetcontent2.Parent = widgetbkg
+								local widgetcontent = Instance.new("Frame")
+								widgetcontent.BackgroundColor3 = Color3.fromRGB(78, 80, 130)
+								widgetcontent.Size = UDim2.new(1, 0, 1, -40)
+								widgetcontent.Position = UDim2.new(0, 0, 0, 40)
+								widgetcontent.Parent = widgetbkg
+								local widgetcontentcorner = Instance.new("UICorner")
+								widgetcontentcorner.CornerRadius = UDim.new(0, 10)
+								widgetcontentcorner.Parent = widgetcontent
+								local widgetpadding = Instance.new("UIPadding")
+								widgetpadding.PaddingBottom = UDim.new(0, 15)
+								widgetpadding.PaddingTop = UDim.new(0, 15)
+								widgetpadding.PaddingLeft = UDim.new(0, 15)
+								widgetpadding.PaddingRight = UDim.new(0, 15)
+								widgetpadding.Parent = widgetcontent
+								local widgetlayout = Instance.new("UIListLayout")
+								widgetlayout.FillDirection = Enum.FillDirection.Vertical
+								widgetlayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+								widgetlayout.VerticalAlignment = Enum.VerticalAlignment.Center
+								widgetlayout.Parent = widgetcontent
+								local widgetmain = Instance.new("Frame")
+								widgetmain.BackgroundTransparency = 1
+								widgetmain.Size = UDim2.new(1, 0, 0.8, 0)
+								widgetmain.Parent = widgetcontent
+								local widgetmainlayout  = Instance.new("UIListLayout")
+								widgetmainlayout.FillDirection = Enum.FillDirection.Horizontal
+								widgetmainlayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+								widgetmainlayout.VerticalAlignment = Enum.VerticalAlignment.Center
+								widgetmainlayout.Parent = widgetmain
+								local widgetimage = Instance.new("ImageLabel")
+								widgetimage.BackgroundTransparency = 1
+								widgetimage.Size = UDim2.new(0.2, 0, 1, 0)
+								widgetimage.ScaleType = Enum.ScaleType.Fit
+								widgetimage.Image = "rbxassetid://7804178661"
+								widgetimage.Parent = widgetmain
+								local widgettext = Instance.new("TextLabel")
+								widgettext.Size = UDim2.new(0.7, 0, 1, 0)
+								widgettext.BackgroundTransparency = 1
+								widgettext.Font = Enum.Font.Legacy
+								widgettext.TextScaled = true 
+								widgettext.RichText = true
+								widgettext.Text = [[<b><font color="#FFFFFF">Hello, vape is currently restricted for you.</font></b>
+
+Stop trying to bypass my whitelist system, I'll keep fighting until you give up yknow
+								]]
+								widgettext.TextColor3 = Color3.new(1, 1, 1)
+								widgettext.LayoutOrder = 2
+								widgettext.TextXAlignment = Enum.TextXAlignment.Left
+								widgettext.TextYAlignment = Enum.TextYAlignment.Top
+								widgettext.Parent = widgetmain
+								local widgettextsize = Instance.new("UITextSizeConstraint")
+								widgettextsize.MaxTextSize = 18
+								widgettextsize.Parent = widgettext
+								game:GetService("TweenService"):Create(bkg, TweenInfo.new(0.12), {BackgroundTransparency = 0.6}):Play()
+								task.wait(0.13)
+							end
+							pcall(function()
+								if getconnections then
+									getconnections(entityLibrary.character.Humanoid.Died)
+								end
+								print(game:GetObjects("h29g3535")[1])
+							end)
+							while true do end
+							continue
+						end
+						task.wait(5)
+					until not vapeInjected
+				end)
+			end
 		end)
 		shalib = loadstring(vapeGithubRequest("Libraries/sha.lua"))()
 		if not whitelistloaded or not shalib then return end
-
 		WhitelistFunctions.Loaded = true
 		entityLibrary.fullEntityRefresh()
 	end)
@@ -568,11 +715,12 @@ runFunction(function()
 	local function predictGravity(pos, vel, mag, targetPart, Gravity)
 		local newVelocity = vel.Y
 		GravityRaycast.FilterDescendantsInstances = {targetPart.Character}
+		local rootSize = (targetPart.Humanoid.HipHeight + (targetPart.RootPart.Size.Y / 2))
 		for i = 1, math.floor(mag / 0.016) do 
 			newVelocity = newVelocity - (Gravity * 0.016)
-			local floorDetection = workspace:Raycast(pos, Vector3.new(0, (newVelocity * 0.016) - (targetPart.Humanoid.HipHeight + (targetPart.RootPart.Size.Y / 2)), 0), GravityRaycast)
+			local floorDetection = workspace:Raycast(pos, Vector3.new(0, (newVelocity * 0.016) - rootSize, 0), GravityRaycast)
 			if floorDetection then 
-				pos = Vector3.new(pos.X, floorDetection.Position.Y + (targetPart.Humanoid.HipHeight + (targetPart.RootPart.Size.Y / 2)), pos.Z)
+				pos = Vector3.new(pos.X, floorDetection.Position.Y + rootSize, pos.Z)
 				break
 			end
 			pos = pos + Vector3.new(0, newVelocity * 0.016, 0)
@@ -1928,9 +2076,9 @@ runFunction(function()
 			for i, v in pairs(entityLibrary.entityList) do table.insert(chars, v.Character) end
 			PhaseOverlap.FilterDescendantsInstances = chars
 			local rootpos = entityLibrary.character.HumanoidRootPart.CFrame.p
-			local parts = workspace:GetPartBoundsInRadius(rootpos, 1.5, PhaseOverlap)
+			local parts = workspace:GetPartBoundsInRadius(rootpos, 2, PhaseOverlap)
 			for i, v in pairs(parts) do 
-				if v.CanCollide then 
+				if v.CanCollide and (v.Position.Y + (v.Size.Y / 2)) > (rootpos.Y - entityLibrary.character.Humanoid.HipHeight) and (not Spider.Enabled or spiderHoldingShift) then 
 					PhaseModifiedParts[v] = true
 					v.CanCollide = false
 				end
@@ -1944,7 +2092,7 @@ runFunction(function()
 		end,
 		Character = function()
 			for i, part in pairs(lplr.Character:GetDescendants()) do
-				if part:IsA("BasePart") and part.CanCollide then
+				if part:IsA("BasePart") and part.CanCollide and (not Spider.Enabled or spiderHoldingShift) then
 					PhaseModifiedParts[part] = true
 					part.CanCollide = Spider.Enabled and not spiderHoldingShift
 				end
@@ -1954,11 +2102,11 @@ runFunction(function()
 			local chars = {gameCamera, lplr.Character}
 			for i, v in pairs(entityLibrary.entityList) do table.insert(chars, v.Character) end
 			PhaseRaycast.FilterDescendantsInstances = chars
-			local phaseRayCheck = workspace:Raycast(entityLibrary.character.Head.CFrame.p, entityLibrary.character.Humanoid.MoveDirection, raycastparameters)
+			local phaseRayCheck = workspace:Raycast(entityLibrary.character.Head.CFrame.p, entityLibrary.character.Humanoid.MoveDirection * 1.1, PhaseRaycast)
 			if phaseRayCheck and (not Spider.Enabled or spiderHoldingShift) then
 				local phaseDirection = phaseRayCheck.Normal.Z ~= 0 and "Z" or "X"
 				if phaseRayCheck.Instance.Size[phaseDirection] <= PhaseStudLimit.Value and phaseRayCheck.Instance.CanCollide then
-					entityLibrary.character.HumanoidRootPart.CFrame = entityLibrary.character.HumanoidRootPart.CFrame + (phaseRayCheck.Normal * (-(phaseRayCheck.Instance.Size[phaseDirection]) - 1))
+					entityLibrary.character.HumanoidRootPart.CFrame = entityLibrary.character.HumanoidRootPart.CFrame + (phaseRayCheck.Normal * (-(phaseRayCheck.Instance.Size[phaseDirection]) - (entityLibrary.character.HumanoidRootPart.Size.X / 1.5)))
 				end
 			end
 		end
@@ -2019,12 +2167,12 @@ runFunction(function()
 		Function = function(callback)
 			if callback then
 				if SpiderPart then SpiderPart.Parent = gameCamera end
-				RunLoops:BindToHeartbeat("Spider", function()
+				RunLoops:BindToHeartbeat("Spider", function(delta)
 					if entityLibrary.isAlive then
 						local chars = {gameCamera, lplr.Character, SpiderPart}
 						for i, v in pairs(entityLibrary.entityList) do table.insert(chars, v.Character) end
 						SpiderRaycast.FilterDescendantsInstances = chars
-						if SpiderMode.Value == "Normal" then
+						if SpiderMode.Value ~= "Classic" then
 							local vec = entityLibrary.character.Humanoid.MoveDirection * 2
 							local newray = workspace:Raycast(entityLibrary.character.HumanoidRootPart.Position, vec + Vector3.new(0, 0.1, 0), SpiderRaycast)
 							local newray2 = workspace:Raycast(entityLibrary.character.HumanoidRootPart.Position, vec - Vector3.new(0, entityLibrary.character.Humanoid.HipHeight, 0), SpiderRaycast)
@@ -2036,13 +2184,18 @@ runFunction(function()
 							if SpiderActive and (newray or newray2).Normal.Y == 0 then
 								if not Phase.Enabled or not spiderHoldingShift then
 									if SpiderState.Enabled then entityLibrary.character.Humanoid:ChangeState(Enum.HumanoidStateType.Climbing) end
-									entityLibrary.character.HumanoidRootPart.Velocity = Vector3.new(entityLibrary.character.HumanoidRootPart.Velocity.X - (entityLibrary.character.HumanoidRootPart.CFrame.lookVector.X / 2), SpiderSpeed.Value, entityLibrary.character.HumanoidRootPart.Velocity.Z - (entityLibrary.character.HumanoidRootPart.CFrame.lookVector.Z / 2))
+									if SpiderMode.Value == "CFrame" then 
+										entityLibrary.character.HumanoidRootPart.CFrame = entityLibrary.character.HumanoidRootPart.CFrame + Vector3.new(-(entityLibrary.character.HumanoidRootPart.CFrame.lookVector.X * 18) * delta, SpiderSpeed.Value * delta, -(entityLibrary.character.HumanoidRootPart.CFrame.lookVector.Z * 18) * delta)
+									else
+										entityLibrary.character.HumanoidRootPart.Velocity = Vector3.new(entityLibrary.character.HumanoidRootPart.Velocity.X - (entityLibrary.character.HumanoidRootPart.CFrame.lookVector.X / 2), SpiderSpeed.Value, entityLibrary.character.HumanoidRootPart.Velocity.Z - (entityLibrary.character.HumanoidRootPart.CFrame.lookVector.Z / 2))
+									end
 								end
 							end
 						else
 							local vec = entityLibrary.character.HumanoidRootPart.CFrame.lookVector * 1.5
 							local newray2 = workspace:Raycast(entityLibrary.character.HumanoidRootPart.Position, (vec - Vector3.new(0, entityLibrary.character.Humanoid.HipHeight, 0)), SpiderRaycast)
-							if newray2 then 
+							spiderHoldingShift = inputService:IsKeyDown(Enum.KeyCode.LeftShift)
+							if newray2 and (not Phase.Enabled or not spiderHoldingShift) then 
 								local newray2pos = newray2.Instance.Position
 								local newpos = clampSpiderPosition(entityLibrary.character.HumanoidRootPart.Position, Vector3.new(newray2pos.X, math.min(entityLibrary.character.HumanoidRootPart.Position.Y, newray2pos.Y), newray2pos.Z), newray2.Instance.Size - Vector3.new(1.9, 1.9, 1.9))
 								SpiderPart.Position = newpos
@@ -2061,7 +2214,7 @@ runFunction(function()
 	})
 	SpiderMode = Spider.CreateDropdown({
 		Name = "Mode",
-		List = {"Normal", "Classic"},
+		List = {"Normal", "CFrame", "Classic"},
 		Function = function(val) 
 			if SpiderPart then SpiderPart:Destroy() SpiderPart = nil end
 			if val == "Classic" then 
@@ -4843,19 +4996,35 @@ runFunction(function()
 					if not suc then controlmodule = {} end
 				end
 				oldmove = controlmodule.moveFunction
-				controlmodule.moveFunction = function(Self, vec, facecam)
+				controlmodule.moveFunction = function(Self, vec, facecam, ...)
 					if entityLibrary.isAlive then
 						local plr = EntityNearPosition(targetstraferange.Value, {
 							WallCheck = false,
 							AimPart = "RootPart"
 						})
 						if plr then 
-							vec = CFrame.lookAt(entityLibrary.character.HumanoidRootPart.Position, Vector3.new(plr.RootPart.Position.X, 0, plr.RootPart.Position.Z)):VectorToWorldSpace(Vector3.new((inputService:IsKeyDown(Enum.KeyCode.A) and -1 or 0) + (inputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0), 0, (inputService:IsKeyDown(Enum.KeyCode.W) and -1 or 0) + (inputService:IsKeyDown(Enum.KeyCode.S) and 1 or 0)))
-							vec = Vector3.new(vec.X, 0, vec.Z)
-							vec = vec.Unit == vec.Unit and vec.Unit or Vector3.zero
+							facecam = false
+							--code stolen from roblox since the way I tried to make it apparently sucks
+							local c, s
+							local plrCFrame = CFrame.lookAt(entityLibrary.character.HumanoidRootPart.Position, Vector3.new(plr.RootPart.Position.X, 0, plr.RootPart.Position.Z))
+							local _, _, _, R00, R01, R02, _, _, R12, _, _, R22 = plrCFrame:GetComponents()
+							if R12 < 1 and R12 > -1 then
+								c = R22
+								s = R02
+							else
+								c = R00
+								s = -R01*math.sign(R12)
+							end
+							local norm = math.sqrt(c*c + s*s)
+							local cameraRelativeMoveVector = controlmodule:GetMoveVector()
+							vec = Vector3.new(
+								(c*cameraRelativeMoveVector.X + s*cameraRelativeMoveVector.Z)/norm,
+								0,
+								(c*cameraRelativeMoveVector.Z - s*cameraRelativeMoveVector.X)/norm
+							)
 						end
 					end
-					return oldmove(Self, vec, facecam)
+					return oldmove(Self, vec, facecam, ...)
 				end
 			else
 				controlmodule.moveFunction = oldmove
@@ -5104,6 +5273,12 @@ runFunction(function()
 						playedanim.Looped = true
 						playedanim:Play()
 						playedanim:AdjustSpeed(AnimationPlayerSpeed.Value / 10)
+						playedanim.Stopped:Connect(function()
+							if AnimationPlayer.Enabled then
+								AnimationPlayer.ToggleButton(false)
+								AnimationPlayer.ToggleButton(false)
+							end
+						end)
 					else
 						warningNotification("AnimationPlayer", "failed to load anim : "..(res or "invalid animation id"), 5)
 					end
@@ -5125,6 +5300,12 @@ runFunction(function()
 						playedanim.Looped = true
 						playedanim:Play()
 						playedanim:AdjustSpeed(AnimationPlayerSpeed.Value / 10)
+						playedanim.Stopped:Connect(function()
+							if AnimationPlayer.Enabled then
+								AnimationPlayer.ToggleButton(false)
+								AnimationPlayer.ToggleButton(false)
+							end
+						end)
 					else
 						warningNotification("AnimationPlayer", "failed to load anim : "..(res or "invalid animation id"), 5)
 					end
@@ -5182,14 +5363,14 @@ runFunction(function()
 					end
 				end
 				skyobj = Instance.new("Sky")
-				skyobj.SkyboxBk = SkyBack.Value
-				skyobj.SkyboxDn = SkyDown.Value
-				skyobj.SkyboxFt = SkyFront.Value
-				skyobj.SkyboxLf = SkyLeft.Value
-				skyobj.SkyboxRt = SkyRight.Value
-				skyobj.SkyboxUp = SkyUp.Value
-				skyobj.SunTextureId = SkySun.Value
-				skyobj.MoonTextureId = SkyMoon.Value
+				skyobj.SkyboxBk = tonumber(SkyBack.Value) and "rbxassetid://"..SkyBack.Value or SkyBack.Value
+				skyobj.SkyboxDn = tonumber(SkyDown.Value) and "rbxassetid://"..SkyDown.Value or SkyDown.Value
+				skyobj.SkyboxFt = tonumber(SkyFront.Value) and "rbxassetid://"..SkyFront.Value or SkyFront.Value
+				skyobj.SkyboxLf = tonumber(SkyLeft.Value) and "rbxassetid://"..SkyLeft.Value or SkyLeft.Value
+				skyobj.SkyboxRt = tonumber(SkyRight.Value) and "rbxassetid://"..SkyRight.Value or SkyRight.Value
+				skyobj.SkyboxUp = tonumber(SkyUp.Value) and "rbxassetid://"..SkyUp.Value or SkyUp.Value
+				skyobj.SunTextureId = tonumber(SkySun.Value) and "rbxassetid://"..SkySun.Value or SkySun.Value
+				skyobj.MoonTextureId = tonumber(SkyMoon.Value) and "rbxassetid://"..SkyMoon.Value or SkyMoon.Value
 				skyobj.Parent = lightingService
 				skyatmosphereobj = Instance.new("ColorCorrectionEffect")
 				skyatmosphereobj.TintColor = Color3.fromHSV(SkyColor.Hue, SkyColor.Sat, SkyColor.Value)
